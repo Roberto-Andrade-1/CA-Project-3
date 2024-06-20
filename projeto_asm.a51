@@ -1,11 +1,11 @@
 ;--------- constantes -------------
 TempoL EQU 0x06						; Valor do reload do timer 250ms
 TempoH EQU 0x06		
-	
+
 MAX EQU 50  						; numero a ser apresentado no display
 DECI EQU 40 						; valor para chegar aos 10 milissegundos
 SEGS EQU 100						; valor para chegar a 1 segundo
-	
+
 ;----------- portas --------------
 display1 EQU P1						; porta para o primeiro display
 display2 EQU P2						; porta para o segundo display
@@ -40,10 +40,9 @@ CSEG AT 000BH
 ; interrupcao do 3.3 quando um dos botoes de resposta sao primidos ativa a AND
 CSEG AT 0013H
 	JMP interrupcaoExterna1
-	RETI
 	
 
-; botao 1 e primido, ativa a interrupcao
+; botao 1 e primido
 interrupcaoExterna0:
 	CLR TR0             			; Para o timer
 	CLR EX0							; para não poder clicar no botao outravez e comecar de novo
@@ -52,12 +51,14 @@ interrupcaoExterna0:
 	SETB TR0            			; Inicia o timer
 	RETI
 
+; Resposta selecionada 
 interrupcaoExterna1:
 	
 	JNB BA, aPressed 				; se o botao A for primido salta para o aPressed
 	JNB BB, bPressed				; se o botao b for primido salta para o aPressed
 	JNB BC, cPressed				; se o botao C for primido salta para o aPressed
 	JNB BD, dPressed				; se o botao d for primido salta para o aPressed
+	JMP fimE1
 	aPressed:		
 		MOV R6, #18					; para mostrar A
 		MOV R5, #1					; R1 passa para 1 para "dizer" que respondeu
@@ -81,7 +82,7 @@ interrupcaoExterna1:
 		RETI
 	
 ; overflow do tempo
-interrupcaoTimer:
+interrupcaoTimer: 
 
 	CJNE R4, #1, resto				; se nao chegou ao fim do tempo ou se nao tem uma resposta, nao conta os um segundo
 	DJNZ R2, fimT0					; decrementa o R2 (40 ms) até chegar a zero
@@ -113,10 +114,10 @@ fimT0:
 ; R1 - tempo a mostrar nos displays
 ; R2 - conta os 40 ms
 ; R3 - conta 100x 40ms
-; R4 - usado para os 1s de intervalo de resposta e tempo
-; R5 - 1:resposta selecionada / 0: sem resposta
-; R6 - posicao da resposta
-; R7 - 1: passou um segundo / 0: reset 
+; R4 - usado para saber se tem tempo para responder, ou se o tempo acabou
+; R5 - 1:respondeu / 0: não respondeu
+; R6 - fica com a resposta "a" ou "b" ou "c" ou "d"
+; R7 - durante 1s fica a "1", depois durante 1s fica a "0" 
 
 ; inicio do programa
 CSEG AT 0080H
@@ -126,36 +127,36 @@ CSEG AT 0080H
 		CALL ativaInterrupcoes
 		CALL confTemp
 		
-	ciclo: 
-		
 	verificaResposta:
 		CJNE R5, #1, continuaCiclo	; Se R5 for 1 entao uma resposta foi selecionada, caso contrario salta para "continuaCiclo"
-		MOV R4, #1					; R4 fica com o valor 1, para mostrar que acabou o tempo
-	loopResposta:
+		MOV R4, #1					; R4 fica com o valor 1, usado para ativar os intervalos de 1s
+		
 		SETB EX0					; ativa a externa 0
-		CJNE R7, #1, loopResposta2	; Se R7 for 1 fica durante 1 segundo neste loop, caso contrario salta para "loopResposta2"
+		CJNE R7, #1, loopResposta	; Se R7 for 1 fica durante 1 segundo neste loop, caso contrario salta para "loopResposta"
 		CALL mostraDisplays			; chama a rotina para mostrar o tempo em que parou
 		JMP verificaResposta		; salta para "verificaResposta"
-	loopResposta2:
+	loopResposta:
 		CALL resposta				; chama a rotina para mostrar a opcao selecionada
 		JMP verificaResposta		; salta para a etiqueta "verificaResposta"
 		
+		
 	continuaCiclo:
 		CALL mostraDisplays			; chama a rotina de mostrar o tempo, quando ta a decrementar
-		CJNE R1, #0, ciclo 			; se R1 for igual a zero chegou ao fim do tempo, se não for igual volta para o ciclo
+		CJNE R1, #0, verificaResposta; se R1 for igual a zero chegou ao fim do tempo, se não for igual volta para o ciclo
 		MOV R4, #1					; mete o valor 1 em R4 
 		SETB EX0					; ativa a externa 0
 		
-	verificaB1:
+		
+	verificaSemResposta:
 		CJNE R4, #0, loopSemResposta; Se R4 for 0 continua, caso contrario salta para a etiqueta "loopSemResposta"
-		JMP ciclo					; salto para a etiqueta "ciclo"
+		JMP verificaResposta		; salto para a etiqueta "verificaResposta"
 	loopSemResposta:
 		CJNE R7, #1,loopSemResposta2; Se R7 for 1 continua para mostrar durante 1s o tempo a 0.0, caso contrario salta para a etiqueta "loopSemResposta2"
 		CALL mostraDisplays			; chama a rotina de mostrar o tempo restante no caso 0.0s
 		JMP loopSemResposta			; salta para a etiqueta de "loopSemResposta"
 	loopSemResposta2:
 		CALL semResposta			; chama a rotina de "semResposta" para mostrar -.-
-		JMP verificaB1				; salta para a etiqueta "verificaB1"
+		JMP verificaSemResposta		; salta para a etiqueta "verificaSemResposta"
 		
 
 ; rotina de mostrar a resposta selecionada
@@ -219,7 +220,7 @@ inicializacoes:
 
 ; onde são ativadas interrupcoes
 ativaInterrupcoes:
-	MOV IE, #83H					; ativa as interrupcoes necessarias
+	MOV IE, #83H					; ativa as interrupcoes necessarias EA=1, ET1=0, EX1=0, ET0=1 e EX0=1 -> IE=10000011
 	SETB IT0						; ativa a interrupcao 0
 	SETB EX0						; ativa a excecao 0
 	SETB EX1 						; ativa a excecao 1
